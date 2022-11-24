@@ -3,9 +3,10 @@ from pathlib import PurePath
 from pathlib import Path
 
 class generator:
-    def __init__(self):
+    def __init__(self, target_os):
         self.generated = False
         self.cmake_first_line = True
+        self.exclude_os = [x for x in ['windows', 'osx', 'linux'] if x != target_os]
 
     def generate(self, ofw_dir):
         self.ofw_dir = PurePath(ofw_dir)
@@ -34,9 +35,14 @@ class generator:
         self.lib_list = []
         self.addon_list = []
 
-        loop_list = [(self.lib_dir, 2), (self.addon_dir, 1)]
+        loop_list = [self.lib_dir, self.addon_dir]
 
-        for target_dir, module_top_dir in loop_list:
+        for dir in Path(self.lib_dir).iterdir():
+            relative_dir = dir.relative_to(self.lib_dir)
+            if dir.is_dir() and relative_dir != Path('openFrameworksCompiled'):
+                self.include_dirs.append(relative_dir)
+
+        for target_dir in loop_list:
             for (dirpath, dirnames, filenames) in os.walk(target_dir):
                 file_paths = [PurePath(dirpath) / PurePath(filename) for filename in filenames]
                 file_paths = [path.relative_to(self.ofw_dir) for path in file_paths]
@@ -46,18 +52,17 @@ class generator:
                     if filepath.is_relative_to('libs/openFrameworksCompiled'):
                         continue
 
-                    if any(PurePath(filepath).suffix for x in ['.h', '.hpp']):
-                        parent = PurePath(filepath).parents[module_top_dir]
-                        
-                        #Remove invalid names
-                        if not any(str(parent) == x for x in ['libs', 'addons', '.']):
-                            #Append only if there is no duplicates
-                            if all(parent != x for x in self.include_dirs):
-                                self.include_dirs.append(parent)
+                    if any(x in PurePath(filepath).suffix for x in ['.h', '.hpp']):
+                        parent = PurePath(filepath).parent
+                        #Append only if there is no duplicates
+                        for dir in [parent, parent.parent, parent.parent.parent]:
+                            if not any(PurePath(dir) == x for x in self.include_dirs):
+                                if not any(x in os.fspath(dir) for x in self.exclude_os):
+                                    self.include_dirs.append(dir)
 
                     if any(PurePath(filepath).suffix == x for x in ['.cpp', '.a', '.dylib']):
                         self.link_files.append(filepath)
-
+                        
         self.generated = True
 
     def __check_available_libraies(self):
@@ -92,8 +97,8 @@ class generator:
         
         for module_name, prefix in loop_zip:
             #print(module_name)
-            include_dirs = [os.fspath(x) for x in self.include_dirs_fspath if module_name in os.fspath(x)]
-            link_files = [os.fspath(x) for x in self.link_files_fspath if module_name in os.fspath(x)]
+            include_dirs = [x for x in self.include_dirs_fspath if module_name in os.fspath(x)]
+            link_files = [x for x in self.link_files_fspath if module_name in os.fspath(x)]
             self.__append_lists(prefix, module_name, include_dirs, link_files)
 
         count_lib = len(self.lib_list)
@@ -110,17 +115,28 @@ class generator:
             self.cmake_first_line = False
 
             for dir in include_dirs:
-                f.write(f'list(APPEND {prefix}_{module_name.upper()}_INCLUDE {dir})')
+                target = os.path.join(self.ofw_dir, dir)
+                f.write(f'list(APPEND {prefix}_{module_name.upper()}_INCLUDE "{target}")')
                 f.write('\n')
 
             for file in link_files:
-                f.write(f'list(APPEND {prefix}_{module_name.upper()}_LINK {file})')
+                target = os.path.join(self.ofw_dir, file)
+                f.write(f'list(APPEND {prefix}_{module_name.upper()}_LINK "{target}")')
                 f.write('\n')
 
+            if len(link_files) > 0:
+                if any('.cpp' in x for x in link_files):
+                    f.write(f'add_library({prefix}_{module_name.upper()} ${{{prefix}_{module_name.upper()}_LINK}})')
+                    f.write('\n')
+                else:
+                    f.write(f'add_library({prefix}_{module_name.upper()} INTERFACE ${{{prefix}_{module_name.upper()}_LINK}})')
+                    f.write('\n')
+
+
         with open('ofw_module_includes.txt', 'a') as f:
-            f.write(f'{prefix}_{module_name.upper()}_INCLUDE')
+            f.write(f'${{{prefix}_{module_name.upper()}_INCLUDE}}')
             f.write('\n')
             
         with open('ofw_module_links.txt', 'a') as f:
-            f.write(f'{prefix}_{module_name.upper()}_LINK')
+            f.write(f'${{{prefix}_{module_name.upper()}}}')
             f.write('\n')
