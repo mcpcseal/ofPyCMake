@@ -5,6 +5,7 @@ from pathlib import Path
 class generator:
     def __init__(self):
         self.generated = False
+        self.cmake_first_line = True
 
     def generate(self, ofw_dir):
         self.ofw_dir = PurePath(ofw_dir)
@@ -41,24 +42,28 @@ class generator:
                 file_paths = [path.relative_to(self.ofw_dir) for path in file_paths]
 
                 for filepath in file_paths:
+                    #Exclude Compiled Libs
+                    if filepath.is_relative_to('libs/openFrameworksCompiled'):
+                        continue
+
                     if any(PurePath(filepath).suffix for x in ['.h', '.hpp']):
                         parent = PurePath(filepath).parents[module_top_dir]
                         
                         #Remove invalid names
-                        if not any(str(parent) in x for x in ['libs', 'addons', '.']):
+                        if not any(str(parent) == x for x in ['libs', 'addons', '.']):
                             #Append only if there is no duplicates
                             if all(parent != x for x in self.include_dirs):
                                 self.include_dirs.append(parent)
 
                     if any(PurePath(filepath).suffix == x for x in ['.cpp', '.a', '.dylib']):
                         self.link_files.append(filepath)
-                    else:
-                        continue
+
         self.generated = True
 
     def __check_available_libraies(self):
         try:
             self.lib_list = [x.name for x in Path(self.lib_dir).iterdir() if x.is_dir()]
+            self.lib_list.remove('openFrameworksCompiled')
         except FileNotFoundError:
             print('Error: openFrameworks library folder is missing.')
             exit()
@@ -98,7 +103,11 @@ class generator:
 
     def __append_lists(self, prefix, module_name, include_dirs, link_files):
         with open('ofw_modules.cmake', 'a') as f:
+            if self.cmake_first_line == False:
+                f.write('\n')
+                
             f.write(f'#{module_name}\n')
+            self.cmake_first_line = False
 
             for dir in include_dirs:
                 f.write(f'list(APPEND {prefix}_{module_name.upper()}_INCLUDE {dir})')
@@ -106,7 +115,7 @@ class generator:
 
             for file in link_files:
                 f.write(f'list(APPEND {prefix}_{module_name.upper()}_LINK {file})')
-                f.write('\n\n')
+                f.write('\n')
 
         with open('ofw_module_includes.txt', 'a') as f:
             f.write(f'{prefix}_{module_name.upper()}_INCLUDE')
