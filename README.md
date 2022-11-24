@@ -1,7 +1,7 @@
 # ofPyCMake - CMake variable genrator for openFrameworks libs and addons
 ## How to use
-1. Put **ofPyCMake** rests in same folder with [openFrameworks](https://github.com/openframeworks/openFrameworks).
-If you don't want to, change `ofw_dir='../openFrameworks'` to your directory.
+1. Put **ofPyCMake** in same folder with [openFrameworks](https://github.com/openframeworks/openFrameworks).
+If you don't want to, change **main.py**'s `ofw_dir='../openFrameworks'` to your directory.
 
 2. include **ofw_modules.cmake** in your CMakeLists.txt.
 
