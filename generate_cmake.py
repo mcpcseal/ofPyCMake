@@ -6,7 +6,7 @@ class generator:
     def __init__(self, target_os):
         self.generated = False
         self.cmake_first_line = True
-        self.exclude_os = [x for x in ['windows', 'osx', 'linux'] if x != target_os]
+        self.exclude_keywords = ['windows', 'win32', 'win', 'DirectShow', 'linux']
 
     def generate(self, ofw_dir):
         self.ofw_dir = PurePath(ofw_dir)
@@ -37,33 +37,40 @@ class generator:
 
         loop_list = [self.lib_dir, self.addon_dir]
 
-        for dir in Path(self.lib_dir).iterdir():
-            relative_dir = dir.relative_to(self.lib_dir)
-            if dir.is_dir() and relative_dir != Path('openFrameworksCompiled'):
-                self.include_dirs.append(relative_dir)
+        self.include_dirs.append('libs/openFrameworks')
 
         for target_dir in loop_list:
             for (dirpath, dirnames, filenames) in os.walk(target_dir):
                 file_paths = [PurePath(dirpath) / PurePath(filename) for filename in filenames]
                 file_paths = [path.relative_to(self.ofw_dir) for path in file_paths]
 
+                if PurePath(dirpath).is_relative_to(self.lib_dir / 'openFrameworksCompiled'):
+                    continue
+
                 for filepath in file_paths:
                     #Exclude Compiled Libs
-                    if filepath.is_relative_to('libs/openFrameworksCompiled'):
+                    if filepath.is_relative_to(self.lib_dir / 'openFrameworksCompiled'):
                         continue
 
-                    if any(x in PurePath(filepath).suffix for x in ['.h', '.hpp']):
-                        parent = PurePath(filepath).parent
-                        #Append only if there is no duplicates
-                        for dir in [parent, parent.parent, parent.parent.parent]:
-                            if not any(PurePath(dir) == x for x in self.include_dirs):
-                                if not any(x in os.fspath(dir) for x in self.exclude_os):
-                                    self.include_dirs.append(dir)
-
+                    #Link Source Files
                     if any(PurePath(filepath).suffix == x for x in ['.cpp', '.a', '.dylib']):
-                        self.link_files.append(filepath)
-                        
+                        if not any(x in os.fspath(filepath) for x in self.exclude_keywords):
+                            self.link_files.append(filepath)
+                    
+                #Include detection with folder names
+                dirpath = PurePath(dirpath).relative_to(self.ofw_dir)
+                if any(x == dirpath.stem for x in ['include', 'libs', 'src']):
+                    #Append only if there is no duplicates
+                    if not any(x in os.fspath(dirpath) for x in self.exclude_keywords):
+                        self.include_dirs.append(dirpath)
+
+                elif dirpath.parent.stem == 'openFrameworks':
+                    #Append openFrameworks basic lib subdirectories
+                    if not any(x in os.fspath(dirpath) for x in self.exclude_keywords):
+                        self.include_dirs.append(dirpath)
+
         self.generated = True
+
 
     def __check_available_libraies(self):
         try:
@@ -107,6 +114,8 @@ class generator:
 
 
     def __append_lists(self, prefix, module_name, include_dirs, link_files):
+        include_dirs = list(dict.fromkeys(include_dirs)) #Remove Duplicates
+        link_files = list(dict.fromkeys(link_files)) #Remove Duplicates
         with open('ofw_modules.cmake', 'a') as f:
             if self.cmake_first_line == False:
                 f.write('\n')
